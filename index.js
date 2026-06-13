@@ -10,8 +10,8 @@ app.listen(port, () => {
   console.log(`✅ Web 服务已在容器端口 ${port} 启动`);
 });
 
-// 🚨 核心修复 1：把定时器变量声明在外面
 let actionInterval = null; 
+let reconnectTimeout = null; // 新增：重连锁
 
 function createBot() {
   const bot = mineflayer.createBot({
@@ -19,40 +19,49 @@ function createBot() {
     port: 11826,               
     username: 'myworldhappy',  
     version: false,
-    physics: false             
+    physics: false 
   });
 
   bot.on('spawn', () => {
-    console.log('✅ 假人已成功进服！');
+    console.log('✅ 假人已成功进服！开始原地狂飙演技...');
     bot.physicsEnabled = false; 
 
-    // 以防万一，启动新定时器前先清空旧的
     if (actionInterval) clearInterval(actionInterval);
 
-    // 赋值给外面的变量
     actionInterval = setInterval(() => {
       try {
         bot.swingArm('right'); 
         bot.look(Math.random() * Math.PI * 2, 0); 
-        console.log('Bot 执行了安全防暂离动作 (挥手+转头)。');
+        bot.setControlState('sneak', true);
+        setTimeout(() => bot.setControlState('sneak', false), 1000);
+        console.log('Bot 执行了高强度体操 (蹲起 + 挥手 + 张望)。');
       } catch (err) {
-        console.log('执行动作失败，可能已掉线。');
+        console.log('执行动作失败，等待重连...');
       }
-    }, 300000);
+    }, 300000); 
+  });
+
+  // 记录被服务器踢出的明确原因
+  bot.on('kicked', (reason) => {
+    console.log('⚠️ 被服务器踢出，原因:', reason);
   });
 
   bot.on('error', err => console.log('❌ 内部错误:', err));
   
   bot.on('end', () => {
-    console.log('⚠️ 连接断开，10秒后尝试重连...');
+    console.log('⚠️ 连接断开，准备重连...');
     
-    // 🚨 核心修复 2：Bot 掉线时，立刻销毁定时器，释放内存！
+    // 清理旧的动作定时器
     if (actionInterval) {
       clearInterval(actionInterval);
       actionInterval = null;
     }
     
-    setTimeout(createBot, 10000);
+    // 🚨 核心修复：防止开启多个重连任务产生“影分身”
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+    }
+    reconnectTimeout = setTimeout(createBot, 10000);
   });
 }
 
